@@ -1,21 +1,24 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module Tracker where
 
-import Control.Monad (forM_)
+import Control.Monad (filterM, forM_)
 import Data.Maybe (fromJust, fromMaybe)
-import Data.Text (Text, pack, split, unpack)
-import Data.Text.IO qualified as TIO (putStrLn)
+import Data.Text as T (Text, pack, split, unlines, unpack)
 import Data.Text.Lazy (fromStrict)
 
-import Database.SQLite.Simple (Connection, FromRow, ToRow, execute, execute_, field, fromRow, query_, toRow)
+import Database.SQLite.Simple (Connection, FromRow, ToRow, execute, execute_, field, fromRow, query, query_, toRow)
 import Database.SQLite.Simple.FromField (FromField)
 import Database.SQLite.Simple.ToField (ToField)
 import Database.SQLite.Simple.Types (Only (..))
 
-import Network.HaskellNet.SMTP.SSL (AuthType (PLAIN), authenticate, doSMTPSSL, sendMail)
-import Network.Mail.Mime (Address (Address), simpleMail')
+import Network.HaskellNet.SMTP.SSL (AuthType (LOGIN), authenticate, doSMTPPort, sendMail)
+import Network.Mail.Mime (Address (Address), simpleMail)
 
+import Text.Blaze.Html.Renderer.Text (renderHtml)
+import Text.Blaze.Html5 as H (Html, a, body, docTypeHtml, h2, hr, p, stringValue, toHtml, (!))
+import Text.Blaze.Html5.Attributes as A (href)
 import Text.HTML.Scalpel
 import Text.Read (readMaybe)
 
@@ -34,6 +37,7 @@ data SMTPConfig = SMTPConfig
     , smtpPass :: String
     , fromEmail :: Address
     }
+    deriving (Show)
 
 data Notice = Notice
     { id :: Int
@@ -53,65 +57,103 @@ saveNotice :: Notice -> Connection -> IO ()
 saveNotice n conn = do
     execute conn "INSERT INTO notices (title, desc, url) VALUES (?, ?, ?)" n
 
-{-
- TODO: Change mail body to html
- TODO: Pass attachements in the email
--}
-sendNotice :: Notice -> SMTPConfig -> Connection -> IO ()
-sendNotice n conf conn = do
-    subscribers <- query_ conn "SELECT uuid, mail FROM subscribers" :: IO [Subscriber]
-    forM_ subscribers $ \sub -> do
-        let mailMsg =
-                simpleMail'
-                    (Address Nothing $ pack $ mail sub)
-                    (fromEmail conf)
-                    (title n)
-                    (fromStrict $ desc n)
-        doSMTPSSL (smtpHost conf) $ \smtpConn -> do
-            authSucceed <- authenticate PLAIN (smtpUser conf) (smtpPass conf) smtpConn
-            if authSucceed
-                then sendMail mailMsg smtpConn
-                else TIO.putStrLn "SMTP authentication failed"
-
-fetchNoticeRefs :: Scraper Text [(Text, Text)]
-fetchNoticeRefs =
-    chroot
-        ( "div"
-            @: [hasClass "box-editais-andamentos"]
-            // "div"
-            @: [hasClass "card"]
-            // "div"
-            @: [hasClass "card-body"]
-        )
-        $ do
-            hrefs <- attrs "href" "a"
-            titles <- texts $ "span" @: [hasClass "badge"]
-            return $ zip hrefs titles
-
-fetchDesc :: Scraper Text Text
-fetchDesc = text $ "div" @: [hasClass "conteudo-noticia"]
-
 fetchNotices :: IO [Notice]
 fetchNotices = do
     refs <- scrapeURL (baseURL ++ "/portal/editais") fetchNoticeRefs
-    sequence $ maybe [] mapNotices refs
+    sequence $ maybe [] (toNotice <$>) refs
   where
-    mapNotices :: [(Text, Text)] -> [IO Notice]
-    mapNotices headers = toNotice <$> headers
-
     toNotice :: (Text, Text) -> IO Notice
     toNotice (ref, title) = do
         -- FIXME: This should fail gracefully and log, not panic the program.
-        let id' = fromJust $ readMaybe $ unpack $ last $ split (== '/') ref
+        let id = fromJust $ readMaybe $ unpack $ last $ split (== '/') ref
         let url = baseURL ++ unpack ref
         desc <- scrapeURL url fetchDesc
         return
             Notice
-                { id = id'
+                { id = id
                 , title = title
                 , desc = fromMaybe "" desc
                 , url = url
                 }
+
+    fetchNoticeRefs :: Scraper Text [(Text, Text)]
+    fetchNoticeRefs =
+        chroot
+            ( "div"
+                @: [hasClass "box-editais-andamentos"]
+                // "div"
+                @: [hasClass "card"]
+                // "div"
+                @: [hasClass "card-body"]
+            )
+            $ chroots "a"
+            $ do
+                ref <- attr "href" "a"
+                title <- text $ "span" @: [hasClass "badge"]
+                return (ref, title)
+
+    fetchDesc :: Scraper Text Text
+    fetchDesc = text $ "div" @: [hasClass "conteudo-noticia"]
+
+filterNewNotices :: Connection -> [Notice] -> IO [Notice]
+filterNewNotices conn = filterM isNew
+  where
+    isNew :: Notice -> IO Bool
+    isNew (Notice id _ _ _) = do
+        ret <- query conn "SELECT 1 FROM notices WHERE id = ? LIMIT 1" [id] :: IO [Notice]
+        return $ null ret
+
+buildNoticeHtmlMsg :: Notice -> Html
+buildNoticeHtmlMsg (Notice _ title desc url) = do
+    h2 $ toHtml title
+    p $ toHtml desc
+    a ! href (stringValue url) $ "Link do edital"
+    hr
+
+buildNoticeHtmlMsgList :: [Notice] -> Html
+buildNoticeHtmlMsgList ns = H.docTypeHtml $ do
+    body $ do
+        mapM_ buildNoticeHtmlMsg ns
+
+buildNoticeMsg :: Notice -> Text
+buildNoticeMsg (Notice _ title desc url) =
+    T.unlines
+        [ title
+        , ""
+        , desc
+        , ""
+        , "LINK DO EDITAL"
+        , pack url
+        , pack $ replicate 50 '-'
+        ]
+
+buildNoticeMsgList :: [Notice] -> Text
+buildNoticeMsgList = T.unlines . (buildNoticeMsg <$>)
+
+-- TODO: Add unsubscribe option (unsubscribe endpoint with person token)
+sendNotices :: [Notice] -> SMTPConfig -> Connection -> IO ()
+sendNotices ns conf conn = do
+    doSMTPPort (smtpHost conf) (fromIntegral $ smtpPort conf) $ \smtpConn -> do
+        auth <- authenticate LOGIN (smtpUser conf) (smtpPass conf) smtpConn
+        if not auth
+            then putStrLn "auth failed"
+            else do
+                subs <- query_ conn "SELECT uuid, mail FROM subscribers" :: IO [Subscriber]
+                let plain = buildNoticeMsgList ns
+                let html = buildNoticeHtmlMsgList ns
+                forM_ subs $ \sub -> do
+                    msg <-
+                        simpleMail
+                            (Address Nothing $ pack $ mail sub)
+                            (fromEmail conf)
+                            (pack $ buildTitle $ length ns)
+                            (fromStrict plain)
+                            (renderHtml html)
+                            []
+                    sendMail msg smtpConn
+  where
+    buildTitle :: Int -> String
+    buildTitle n = if n > 1 then show n ++ " novos editais foram abertos" else "Um novo edital foi aberto"
 
 newtype UUID = UUID Text
     deriving (FromField, ToField)

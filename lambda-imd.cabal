@@ -75,7 +75,9 @@ library
                       mime-mail,
                       HaskellNet-SSL,
                       HaskellNet-SSL,
-                      scalpel
+                      scalpel,
+                      blaze-html
+
 
     -- Directories containing source files.
     hs-source-dirs:   lib
