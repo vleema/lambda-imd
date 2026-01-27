@@ -52,7 +52,7 @@ extra-doc-files:    CHANGELOG.md
 -- extra-source-files:
 
 common warnings
-    ghc-options: -Wall
+    ghc-options: -Wall -threaded
 
 library
     -- Import common warning flags.
@@ -68,15 +68,16 @@ library
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.21.0.0,
-                      sqlite-simple,
-                      text,
-                      uuid,
-                      mime-mail,
-                      HaskellNet-SSL,
-                      HaskellNet-SSL,
-                      scalpel,
-                      blaze-html
+    build-depends:
+        base ^>=4.21.0.0,
+        HaskellNet-SSL,
+        blaze-html,
+        mime-mail,
+        scalpel,
+        sqlite-simple,
+        text,
+        time,
+        uuid
 
 
     -- Directories containing source files.
@@ -101,9 +102,18 @@ executable lambda-imd
     -- Other library packages from which modules are imported.
     build-depends:
         base ^>=4.21.0.0,
+        HaskellNet-SSL,
+        blaze-html,
+        cron,
+        dotenv,
+        http-types,
         lambda-imd,
+        mime-mail,
+        random,
         scotty,
-        dotenv
+        sqlite-simple,
+        text
+
 
     -- Directories containing source files.
     hs-source-dirs:   app
