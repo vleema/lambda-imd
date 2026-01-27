@@ -4,18 +4,17 @@
 module Tracker where
 
 import Control.Monad (filterM, forM_)
-import Data.Maybe (fromJust, fromMaybe)
+import Data.Maybe (fromJust, fromMaybe, listToMaybe)
 import Data.Text as T (Text, pack, split, unlines, unpack)
 import Data.Text.Lazy (fromStrict)
-
+import Data.Time.Clock (UTCTime, getCurrentTime)
+import Data.UUID (toString)
+import Data.UUID.V4 (nextRandom)
 import Database.SQLite.Simple (Connection, FromRow, ToRow, execute, execute_, field, fromRow, query, query_, toRow)
 import Database.SQLite.Simple.FromField (FromField)
 import Database.SQLite.Simple.ToField (ToField)
-import Database.SQLite.Simple.Types (Only (..))
-
 import Network.HaskellNet.SMTP.SSL (AuthType (LOGIN), authenticate, doSMTPPort, sendMail)
 import Network.Mail.Mime (Address (Address), simpleMail)
-
 import Text.Blaze.Html.Renderer.Text (renderHtml)
 import Text.Blaze.Html5 as H (Html, a, body, docTypeHtml, h2, hr, p, stringValue, toHtml, (!))
 import Text.Blaze.Html5.Attributes as A (href)
@@ -27,8 +26,20 @@ baseURL = "https://portal.imd.ufrn.br"
 
 createSchema :: Connection -> IO ()
 createSchema conn = do
-    execute_ conn "CREATE TABLE IF NOT EXISTS notices  (id INTEGER PRIMARY KEY, title TEXT NOT NULL, desc TEXT, url TEXT NOT NULL)"
-    execute_ conn "CREATE TABLE IF NOT EXISTS subscribers (uuid UUID PRIMARY KEY, mail TEXT NOT NULL)"
+    execute_
+        conn
+        "CREATE TABLE IF NOT EXISTS notices (\
+        \id INTEGER PRIMARY KEY,\
+        \title TEXT NOT NULL,\
+        \desc TEXT,\
+        \url TEXT NOT NULL)"
+    execute_
+        conn
+        "CREATE TABLE IF NOT EXISTS subscribers (\
+        \uuid UUID PRIMARY KEY,\
+        \mail TEXT NOT NULL,\
+        \verified BOOLEAN NOT NULL,\
+        \created_at TEXT NOT NULL)"
 
 data SMTPConfig = SMTPConfig
     { smtpHost :: String
@@ -155,22 +166,41 @@ sendNotices ns conf conn = do
     buildTitle :: Int -> String
     buildTitle n = if n > 1 then show n ++ " novos editais foram abertos" else "Um novo edital foi aberto"
 
-newtype UUID = UUID Text
+newtype UUID = UUID String
     deriving (FromField, ToField)
+
+instance Show UUID where
+    show (UUID s) = s
 
 data Subscriber = Subscriber
     { uuid :: UUID
     , mail :: String
+    , verified :: Bool
+    , created_at :: UTCTime
     }
+    deriving (Show)
 
 instance FromRow Subscriber where
-    fromRow = Subscriber <$> field <*> field
+    fromRow = Subscriber <$> field <*> field <*> field <*> field
 
 instance ToRow Subscriber where
-    toRow (Subscriber subscriberUuid mail) = toRow (subscriberUuid, mail)
+    toRow (Subscriber uuid mail verified created_at) = toRow (uuid, mail, verified, created_at)
 
-saveSubscriber :: Subscriber -> Connection -> IO ()
-saveSubscriber s conn = execute conn "INSERT INTO subscribers (uuid, mail) VALUES (?, ?)" s
+getSubscriber :: UUID -> Connection -> IO (Maybe Subscriber)
+getSubscriber uuid conn = listToMaybe <$> query conn "SELECT * FROM subscribers WHERE uuid = ?" [uuid]
 
-deleteSubscriber :: Text -> Connection -> IO ()
-deleteSubscriber uuid conn = execute conn "DELETE from subscribers WHERE uuid = ?" (Only uuid)
+getSubscriberByMail :: String -> Connection -> IO (Maybe Subscriber)
+getSubscriberByMail mail conn = listToMaybe <$> query conn "SELECT * FROM subscribers WHERE mail = ?" [mail]
+
+saveSubscriber :: String -> Connection -> IO Subscriber
+saveSubscriber mail conn = do
+    currentTime <- getCurrentTime
+    uuid <- UUID . toString <$> nextRandom
+    execute conn "INSERT INTO subscribers (uuid, mail, verified, created_at) VALUES (?, ?, ?, ?)" (uuid, mail, False, currentTime)
+    return $ Subscriber uuid mail False currentTime
+
+verifySubscriber :: UUID -> Connection -> IO ()
+verifySubscriber uuid conn = execute conn "UPDATE subscribers SET verified = true WHERE uuid = ?" [uuid]
+
+deleteSubscriber :: UUID -> Connection -> IO ()
+deleteSubscriber uuid conn = execute conn "DELETE from subscribers WHERE uuid = ?" [uuid]
