@@ -13,5 +13,5 @@ COPY --from=builder /build/bin/lambda-imd /usr/local/bin/app
 RUN useradd -m app
 RUN chown -R app:app /usr/local/app
 USER app
-EXPOSE 3000
+EXPOSE 8080
 CMD ["/usr/local/bin/app"]
