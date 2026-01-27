@@ -3,6 +3,7 @@
 
 module Main (main) where
 
+import Configuration.Dotenv (defaultConfig, loadFile)
 import Control.Arrow ((&&&))
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Monad (unless)
@@ -97,6 +98,7 @@ sendVerificationMail sub conf = do
 
 main :: IO ()
 main = do
+    _ <- loadFile defaultConfig
     conn <- initDB
     _ <- execSchedule $ do
         addJob (sendNewNotices conn =<< smtpConfig) "0 9 * * *"
