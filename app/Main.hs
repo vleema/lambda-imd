@@ -98,10 +98,13 @@ sendVerificationMail sub conf = do
 
 main :: IO ()
 main = do
-    _ <- loadFile defaultConfig
+    loadFile defaultConfig
     conn <- initDB
+    conf <- smtpConfig
+    sendNewNotices conn conf
+
     _ <- execSchedule $ do
-        addJob (sendNewNotices conn =<< smtpConfig) "0 9 * * *"
+        addJob (sendNewNotices conn conf) "0 9 * * *"
 
     scotty 8080 $ do
         get "/" $ do
