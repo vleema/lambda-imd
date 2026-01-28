@@ -19,6 +19,7 @@ SMTP_HOST=
 SMTP_PORT=
 SMTP_USER=
 SMTP_PASS=
+SMTP_FROM=
 ```
 
 Depois disso, basta executar `cabal run` e o servidor ficará exposto na porta `8080`. A página principal da aplicação fica em `/`.
