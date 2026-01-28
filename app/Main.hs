@@ -4,13 +4,11 @@
 module Main (main) where
 
 import Configuration.Dotenv (defaultConfig, loadFile)
-import Control.Arrow ((&&&))
-import Control.Concurrent (forkIO, threadDelay)
 import Control.Monad (unless)
-import Data.Maybe (fromJust, fromMaybe)
+import Data.Maybe (fromMaybe)
 import Data.Text (pack)
 import Data.Text.Lazy (fromStrict)
-import Data.Time.Clock (UTCTime, addUTCTime, getCurrentTime)
+import Data.Time.Clock (addUTCTime, getCurrentTime)
 import Database.SQLite.Simple (Connection, open)
 import Network.HTTP.Types.Status (status404, status409)
 import Network.HaskellNet.SMTP.SSL (AuthType (LOGIN), authenticate, doSMTPPort, sendMail)
@@ -73,8 +71,9 @@ contributing = do
 sendNewNotices :: Connection -> SMTPConfig -> IO ()
 sendNewNotices conn conf = do
     ns <- filterNewNotices conn =<< fetchNotices
-    saveNotices ns conn
-    sendNotices ns conf conn
+    unless (null ns) $ do
+        saveNotices ns conn
+        sendNotices ns conf conn
 
 sendVerificationMail :: Subscriber -> SMTPConfig -> IO ()
 sendVerificationMail sub conf = do
