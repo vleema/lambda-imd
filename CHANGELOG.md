@@ -1,5 +1,9 @@
 # Revision history for observador-imd
 
+## 0.1.1.1 -- 2026-01-28
+
+- Fixed new notices filtering.
+
 ## 0.1.1.0 -- 2026-01-28
 
 - Fixed notices not being properly saved.
