@@ -144,13 +144,13 @@ main = do
                         p $ a ! href "/" $ "Voltar"
 
         get "/verify" $ do
-            uuid <- queryParam "uuid" :: ActionM String
+            uuid <- UUID <$> queryParam "uuid"
             html $ renderHtml $ docTypeHtml $ do
                 contributing
                 h1 "Verificar email"
                 p "Clique no botão abaixo para confirmar seu endereço de email"
                 form ! method "POST" ! action "/verify" $ do
-                    input ! type_ "hidden" ! name "uuid" ! value (toValue uuid)
+                    input ! type_ "hidden" ! name "uuid" ! value (toValue $ show uuid)
                     button ! type_ "submit" ! class_ "large-button" $ "Verificar email"
 
         post "/verify" $ do
@@ -164,12 +164,18 @@ main = do
                         h1 "Identificador inválido"
                         p "O link de verificação é inválido ou expirou."
                         p $ a ! href "/" $ "Realize o cadastro novamente"
-                Just _ -> do
-                    liftIO $ verifySubscriber uuid conn
-                    html $ renderHtml $ docTypeHtml $ do
-                        contributing
-                        h1 "Verificação realizada"
-                        p "Seu email foi verificado com sucesso!"
+                Just sub -> do
+                    if verified sub
+                        then html $ renderHtml $ docTypeHtml $ do
+                            contributing
+                            h1 "Seu email já foi verificado"
+                            p "Seu email já foi verificado, não precisa verifica-lo novamente."
+                        else do
+                            liftIO $ verifySubscriber uuid conn
+                            html $ renderHtml $ docTypeHtml $ do
+                                contributing
+                                h1 "Verificação realizada"
+                                p "Seu email foi verificado com sucesso!"
 
         get "/unsubscribe" $ do
             uuid <- queryParam "uuid" :: ActionM String
