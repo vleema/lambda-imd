@@ -10,6 +10,7 @@ RUN cabal update -j && \
 FROM debian:bookworm-slim
 WORKDIR /usr/local/app
 RUN apt-get update && apt-get install -y --no-install-recommends netbase && rm -rf /var/lib/apt/lists/*
+ENV TZ=America/Fortaleza
 COPY --from=builder /build/bin/lambda-imd /usr/local/bin/app
 COPY .env ./
 RUN useradd -m app
