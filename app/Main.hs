@@ -15,6 +15,7 @@ import Network.HaskellNet.SMTP.SSL (AuthType (LOGIN), authenticate, doSMTPPort, 
 import Network.Mail.Mime (Address (Address), simpleMail)
 import System.Cron
 import System.Environment (getEnv)
+import System.Log.FastLogger (LogType' (LogStdout), TimedFastLogger, defaultBufSize, newTimeCache, newTimedFastLogger, simpleTimeFormat)
 import Text.Blaze.Html (Html)
 import Text.Blaze.Html.Renderer.Text (renderHtml)
 import Text.Blaze.Html5 as H (ToValue (toValue), a, button, docTypeHtml, form, h1, hr, input, label, p, (!))
@@ -31,6 +32,8 @@ import Tracker (
     filterNewNotices,
     getSubscriber,
     getSubscriberByMail,
+    logError,
+    logInfo,
     saveNotices,
     saveSubscriber,
     sendNotices,
@@ -68,19 +71,21 @@ contributing = do
         " para sugestões de melhorias, bugs e outros"
         hr
 
-sendNewNotices :: Connection -> SMTPConfig -> IO ()
-sendNewNotices conn conf = do
+sendNewNotices :: Connection -> SMTPConfig -> TimedFastLogger -> IO ()
+sendNewNotices conn conf logger = do
+    logInfo logger "Started fetching and sending new notices"
     ns <- filterNewNotices conn =<< fetchNotices
+    logInfo logger ("Found " <> pack (show $ length ns) <> " new notices")
     unless (null ns) $ do
         saveNotices ns conn
-        sendNotices ns conf conn
+        sendNotices ns conf conn logger
 
-sendVerificationMail :: Subscriber -> SMTPConfig -> IO ()
-sendVerificationMail sub conf = do
+sendVerificationMail :: Subscriber -> TimedFastLogger -> SMTPConfig -> IO ()
+sendVerificationMail sub logger conf = do
     doSMTPPort (smtpHost conf) (fromIntegral $ smtpPort conf) $ \smtpConn -> do
         auth <- authenticate LOGIN (smtpUser conf) (smtpPass conf) smtpConn
         if not auth
-            then putStrLn "auth failed"
+            then logError logger "Failed to authenticate with SMTP server"
             else do
                 url <- getEnv "URL"
                 let plain = "Accesse " ++ url ++ "/verify?uuid=" ++ show (uuid sub) ++ " para verificar seu email. O link expirará em 15 minutos."
@@ -99,10 +104,11 @@ sendVerificationMail sub conf = do
                         []
                 sendMail msg smtpConn
 
-cleanupExpiredSubscribers :: Connection -> IO ()
-cleanupExpiredSubscribers conn = do
+cleanupExpiredSubscribers :: Connection -> TimedFastLogger -> IO ()
+cleanupExpiredSubscribers conn logger = do
+    logInfo logger "Starting cleanup job of expired unverified subscribers"
     now <- getCurrentTime
-    let cutoff = addUTCTime (-(15 * 60)) now
+    let cutoff = addUTCTime (-(1 * 60)) now
     deleteUnverifiedOlderThan cutoff conn
 
 main :: IO ()
@@ -110,11 +116,13 @@ main = do
     loadFile defaultConfig
     conn <- initDB
     conf <- smtpConfig
-    sendNewNotices conn conf
+    timeCache <- newTimeCache simpleTimeFormat
+    (logger, _) <- newTimedFastLogger timeCache (LogStdout defaultBufSize)
+    sendNewNotices conn conf logger
 
     _ <- execSchedule $ do
-        addJob (sendNewNotices conn conf) "0 9 * * *"
-        addJob (cleanupExpiredSubscribers conn) "*/5 * * *"
+        addJob (sendNewNotices conn conf logger) "0 9 * * *"
+        addJob (cleanupExpiredSubscribers conn logger) "*/5 * * * *"
 
     scotty 8080 $ do
         get "/" $ do
@@ -137,7 +145,7 @@ main = do
             case sub of
                 Nothing -> do
                     sub <- liftIO $ saveSubscriber mail conn
-                    liftIO $ sendVerificationMail sub =<< smtpConfig
+                    liftIO $ sendVerificationMail sub logger =<< smtpConfig
                     html $ renderHtml $ docTypeHtml $ do
                         contributing
                         h1 "Cadastro realizado"

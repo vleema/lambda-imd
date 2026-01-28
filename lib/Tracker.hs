@@ -16,11 +16,18 @@ import Database.SQLite.Simple.ToField (ToField)
 import Network.HaskellNet.SMTP.SSL (AuthType (LOGIN), authenticate, doSMTPPort, sendMail)
 import Network.Mail.Mime (Address (Address), simpleMail)
 import System.Environment (getEnv)
+import System.Log.FastLogger (TimedFastLogger, toLogStr)
 import Text.Blaze.Html.Renderer.Text (renderHtml)
 import Text.Blaze.Html5 as H (Html, a, body, docTypeHtml, h2, hr, p, stringValue, toHtml, toValue, (!))
 import Text.Blaze.Html5.Attributes as A (href)
 import Text.HTML.Scalpel
 import Text.Read (readMaybe)
+
+logInfo :: TimedFastLogger -> Text -> IO ()
+logInfo logger msg = logger $ \time -> toLogStr time <> " [INFO] " <> toLogStr msg <> "\n"
+
+logError :: TimedFastLogger -> Text -> IO ()
+logError logger msg = logger $ \time -> toLogStr time <> " [ERROR] " <> toLogStr msg <> "\n"
 
 baseURL :: String
 baseURL = "https://portal.imd.ufrn.br"
@@ -142,12 +149,12 @@ buildNoticeMsg (Notice _ title desc url) =
 buildNoticeMsgList :: [Notice] -> Text
 buildNoticeMsgList = T.unlines . (buildNoticeMsg <$>)
 
-sendNotices :: [Notice] -> SMTPConfig -> Connection -> IO ()
-sendNotices ns conf conn = do
+sendNotices :: [Notice] -> SMTPConfig -> Connection -> TimedFastLogger -> IO ()
+sendNotices ns conf conn logger = do
     doSMTPPort (smtpHost conf) (fromIntegral $ smtpPort conf) $ \smtpConn -> do
         auth <- authenticate LOGIN (smtpUser conf) (smtpPass conf) smtpConn
         if not auth
-            then putStrLn "auth failed"
+            then logError logger "Failed to authenticate with SMTP server"
             else do
                 subs <- query_ conn "SELECT * FROM subscribers" :: IO [Subscriber]
                 let basePlain = buildNoticeMsgList ns
