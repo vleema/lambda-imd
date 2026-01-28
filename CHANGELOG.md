@@ -1,5 +1,9 @@
 # Revision history for observador-imd
 
+## 0.1.1.2 -- 2026-01-28
+
+- Optimizes mail expiration job.
+
 ## 0.1.1.1 -- 2026-01-28
 
 - Fixed new notices filtering.
