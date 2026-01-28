@@ -1,4 +1,10 @@
-# Revision history for imd-editais
+# Revision history for observador-imd
+
+## 0.1.1.0 -- 2026-01-28
+
+- Fixed notices not being properly saved.
+- Added unsubscribe link in notices email.
+- Excluded not verified subscribers from notices emails.
 
 ## 0.1.0.0 -- 2026-01-27
 
