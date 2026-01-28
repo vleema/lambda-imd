@@ -152,7 +152,7 @@ sendNotices ns conf conn = do
                 subs <- query_ conn "SELECT uuid, mail FROM subscribers" :: IO [Subscriber]
                 let plain = buildNoticeMsgList ns
                 let html = buildNoticeHtmlMsgList ns
-                forM_ subs $ \sub -> do
+                forM_ (filter verified subs) $ \sub -> do
                     msg <-
                         simpleMail
                             (Address Nothing $ pack $ mail sub)
