@@ -112,7 +112,7 @@ filterNewNotices conn = filterM isNew
   where
     isNew :: Notice -> IO Bool
     isNew (Notice id _ _ _) = do
-        ret <- query conn "SELECT 1 FROM notices WHERE id = ? LIMIT 1" [id] :: IO [Notice]
+        ret <- query conn "SELECT * FROM notices WHERE id = ? LIMIT 1" [id] :: IO [Notice]
         return $ null ret
 
 buildNoticeHtmlMsg :: Notice -> Html
