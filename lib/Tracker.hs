@@ -213,4 +213,7 @@ verifySubscriber :: UUID -> Connection -> IO ()
 verifySubscriber uuid conn = execute conn "UPDATE subscribers SET verified = true WHERE uuid = ?" [uuid]
 
 deleteSubscriber :: UUID -> Connection -> IO ()
-deleteSubscriber uuid conn = execute conn "DELETE from subscribers WHERE uuid = ?" [uuid]
+deleteSubscriber uuid conn = execute conn "DELETE FROM subscribers WHERE uuid = ?" [uuid]
+
+deleteUnverifiedOlderThan :: UTCTime -> Connection -> IO ()
+deleteUnverifiedOlderThan cutoff conn = execute conn "DELETE FROM subscribers WHERE verified = false AND created_at < ?" [cutoff]

@@ -10,6 +10,7 @@ import Control.Monad (unless)
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Text (pack)
 import Data.Text.Lazy (fromStrict)
+import Data.Time.Clock (UTCTime, addUTCTime, getCurrentTime)
 import Database.SQLite.Simple (Connection, open)
 import Network.HTTP.Types.Status (status404, status409)
 import Network.HaskellNet.SMTP.SSL (AuthType (LOGIN), authenticate, doSMTPPort, sendMail)
@@ -27,6 +28,7 @@ import Tracker (
     UUID (..),
     createSchema,
     deleteSubscriber,
+    deleteUnverifiedOlderThan,
     fetchNotices,
     filterNewNotices,
     getSubscriber,
@@ -98,6 +100,12 @@ sendVerificationMail sub conf = do
                         []
                 sendMail msg smtpConn
 
+cleanupExpiredSubscribers :: Connection -> IO ()
+cleanupExpiredSubscribers conn = do
+    now <- getCurrentTime
+    let cutoff = addUTCTime (-(15 * 60)) now
+    deleteUnverifiedOlderThan cutoff conn
+
 main :: IO ()
 main = do
     loadFile defaultConfig
@@ -107,6 +115,7 @@ main = do
 
     _ <- execSchedule $ do
         addJob (sendNewNotices conn conf) "0 9 * * *"
+        addJob (cleanupExpiredSubscribers conn) "*/5 * * *"
 
     scotty 8080 $ do
         get "/" $ do
@@ -130,11 +139,6 @@ main = do
                 Nothing -> do
                     sub <- liftIO $ saveSubscriber mail conn
                     liftIO $ sendVerificationMail sub =<< smtpConfig
-                    _ <- liftIO $ forkIO $ do
-                        threadDelay (15 * 60 * 1000000) -- 15 minutes.
-                        -- This will not panic cause the subscriber was just saved above.
-                        (isVerified, sub) <- (verified &&& id) . fromJust <$> getSubscriberByMail mail conn
-                        unless isVerified $ deleteSubscriber (uuid sub) conn
                     html $ renderHtml $ docTypeHtml $ do
                         contributing
                         h1 "Cadastro realizado"
