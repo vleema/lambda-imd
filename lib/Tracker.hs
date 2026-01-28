@@ -10,7 +10,7 @@ import Data.Text.Lazy (fromStrict)
 import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.UUID (toString)
 import Data.UUID.V4 (nextRandom)
-import Database.SQLite.Simple (Connection, FromRow, ToRow, execute, execute_, field, fromRow, query, query_, toRow)
+import Database.SQLite.Simple (Connection, FromRow, ToRow, execute, executeMany, execute_, field, fromRow, query, query_, toRow)
 import Database.SQLite.Simple.FromField (FromField)
 import Database.SQLite.Simple.ToField (ToField)
 import Network.HaskellNet.SMTP.SSL (AuthType (LOGIN), authenticate, doSMTPPort, sendMail)
@@ -62,11 +62,11 @@ instance FromRow Notice where
     fromRow = Notice <$> field <*> field <*> field <*> field
 
 instance ToRow Notice where
-    toRow (Notice _id title desc url) = toRow (title, desc, url)
+    toRow (Notice id title desc url) = toRow (id, title, desc, url)
 
-saveNotice :: Notice -> Connection -> IO ()
-saveNotice n conn = do
-    execute conn "INSERT INTO notices (title, desc, url) VALUES (?, ?, ?)" n
+saveNotices :: [Notice] -> Connection -> IO ()
+saveNotices ns conn = do
+    executeMany conn "INSERT INTO notices (id, title, desc, url) VALUES (?, ?, ?, ?)" ns
 
 fetchNotices :: IO [Notice]
 fetchNotices = do

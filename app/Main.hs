@@ -31,6 +31,7 @@ import Tracker (
     filterNewNotices,
     getSubscriber,
     getSubscriberByMail,
+    saveNotices,
     saveSubscriber,
     sendNotices,
     verifySubscriber,
@@ -70,6 +71,7 @@ contributing = do
 sendNewNotices :: Connection -> SMTPConfig -> IO ()
 sendNewNotices conn conf = do
     ns <- filterNewNotices conn =<< fetchNotices
+    saveNotices ns conn
     sendNotices ns conf conn
 
 sendVerificationMail :: Subscriber -> SMTPConfig -> IO ()
