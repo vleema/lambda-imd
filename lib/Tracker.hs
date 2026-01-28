@@ -15,8 +15,9 @@ import Database.SQLite.Simple.FromField (FromField)
 import Database.SQLite.Simple.ToField (ToField)
 import Network.HaskellNet.SMTP.SSL (AuthType (LOGIN), authenticate, doSMTPPort, sendMail)
 import Network.Mail.Mime (Address (Address), simpleMail)
+import System.Environment (getEnv)
 import Text.Blaze.Html.Renderer.Text (renderHtml)
-import Text.Blaze.Html5 as H (Html, a, body, docTypeHtml, h2, hr, p, stringValue, toHtml, (!))
+import Text.Blaze.Html5 as H (Html, a, body, docTypeHtml, h2, hr, p, stringValue, toHtml, toValue, (!))
 import Text.Blaze.Html5.Attributes as A (href)
 import Text.HTML.Scalpel
 import Text.Read (readMaybe)
@@ -141,7 +142,6 @@ buildNoticeMsg (Notice _ title desc url) =
 buildNoticeMsgList :: [Notice] -> Text
 buildNoticeMsgList = T.unlines . (buildNoticeMsg <$>)
 
--- TODO: Add unsubscribe option (unsubscribe endpoint with person token)
 sendNotices :: [Notice] -> SMTPConfig -> Connection -> IO ()
 sendNotices ns conf conn = do
     doSMTPPort (smtpHost conf) (fromIntegral $ smtpPort conf) $ \smtpConn -> do
@@ -149,10 +149,20 @@ sendNotices ns conf conn = do
         if not auth
             then putStrLn "auth failed"
             else do
-                subs <- query_ conn "SELECT uuid, mail FROM subscribers" :: IO [Subscriber]
-                let plain = buildNoticeMsgList ns
-                let html = buildNoticeHtmlMsgList ns
+                subs <- query_ conn "SELECT * FROM subscribers" :: IO [Subscriber]
+                let basePlain = buildNoticeMsgList ns
+                let baseHtml = buildNoticeHtmlMsgList ns
+                baseUrl <- getEnv "URL"
                 forM_ (filter verified subs) $ \sub -> do
+                    -- Clumsy... grr
+                    let unsubscribePath = baseUrl <> "/unsubscribe?uuid=" <> show (uuid sub)
+                    let plain = basePlain <> "Se desinscreva aqui " <> pack unsubscribePath <> "."
+                    let html = do
+                            baseHtml
+                            p $ do
+                                "Se desinscreva "
+                                a ! href (toValue unsubscribePath) $ "aqui"
+                                "."
                     msg <-
                         simpleMail
                             (Address Nothing $ pack $ mail sub)
