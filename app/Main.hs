@@ -108,7 +108,7 @@ cleanupExpiredSubscribers :: Connection -> TimedFastLogger -> IO ()
 cleanupExpiredSubscribers conn logger = do
     logInfo logger "Starting cleanup job of expired unverified subscribers"
     now <- getCurrentTime
-    let cutoff = addUTCTime (-(1 * 60)) now
+    let cutoff = addUTCTime (-(15 * 60)) now
     deleteUnverifiedOlderThan cutoff conn
 
 main :: IO ()
