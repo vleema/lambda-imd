@@ -83,6 +83,7 @@ sendNewNotices conn conf logger = do
 
 sendVerificationMail :: Subscriber -> TimedFastLogger -> SMTPConfig -> IO ()
 sendVerificationMail sub logger conf = do
+    logInfo logger $ pack $ "Sending verification mail to " ++ mail sub
     doSMTPPort (smtpHost conf) (fromIntegral $ smtpPort conf) $ \smtpConn -> do
         auth <- authenticate LOGIN (smtpUser conf) (smtpPass conf) smtpConn
         if not auth
@@ -105,9 +106,8 @@ sendVerificationMail sub logger conf = do
                         []
                 sendMail msg smtpConn
 
-cleanupExpiredSubscribers :: Connection -> TimedFastLogger -> IO ()
-cleanupExpiredSubscribers conn logger = do
-    logInfo logger "Starting cleanup job of expired unverified subscribers"
+cleanupExpiredSubscribers :: Connection -> IO ()
+cleanupExpiredSubscribers conn = do
     now <- getCurrentTime
     let cutoff = addUTCTime (-(15 * 60)) now
     deleteUnverifiedOlderThan cutoff conn
@@ -123,7 +123,7 @@ main = do
 
     _ <- execSchedule $ do
         addJob (sendNewNotices conn conf logger) "0 9 * * *"
-        addJob (cleanupExpiredSubscribers conn logger) "*/5 * * * *"
+        addJob (cleanupExpiredSubscribers conn) "*/5 * * * *"
 
     scotty 8080 $ do
         get "/" $ do
@@ -189,6 +189,7 @@ main = do
                             p "Seu email já foi verificado, não precisa verifica-lo novamente."
                         else do
                             liftIO $ verifySubscriber uuid conn
+                            liftIO $ logInfo logger $ pack $ "Subscriber " ++ mail sub ++ " just verified it's email"
                             html $ renderHtml $ docTypeHtml $ do
                                 contributing
                                 h1 "Verificação realizada"
@@ -213,8 +214,9 @@ main = do
                     html $ renderHtml $ docTypeHtml $ do
                         contributing
                         h1 ""
-                Just _ -> do
+                Just sub -> do
                     liftIO $ deleteSubscriber uuid conn
+                    liftIO $ logInfo logger $ pack $ "Unsubscribed " ++ mail sub
                     html $ renderHtml $ docTypeHtml $ do
                         contributing
                         h1 "Desinscrição realizada"
