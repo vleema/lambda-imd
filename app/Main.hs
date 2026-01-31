@@ -4,6 +4,7 @@
 module Main (main) where
 
 import Configuration.Dotenv (defaultConfig, loadFile)
+import Control.Concurrent (forkIO)
 import Control.Monad (unless)
 import Data.Maybe (fromMaybe)
 import Data.Text (pack)
@@ -145,7 +146,7 @@ main = do
             case sub of
                 Nothing -> do
                     sub <- liftIO $ saveSubscriber mail conn
-                    liftIO $ sendVerificationMail sub logger =<< smtpConfig
+                    _ <- liftIO $ forkIO $ sendVerificationMail sub logger =<< smtpConfig
                     html $ renderHtml $ docTypeHtml $ do
                         contributing
                         h1 "Cadastro realizado"
